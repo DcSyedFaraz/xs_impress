@@ -1,0 +1,18 @@
+.login-container{
+    width: 500px;
+    position: relative;
+}
+
+.login-container-content{
+    height: 100vh;
+    background-color: #fff;
+    padding: 40px;
+    border-radius: 5px;
+    padding-top: 150px
+}
+
+@media only screen and (max-width: 500px) {
+    .login-container{
+        width: 100%;
+    }
+}
