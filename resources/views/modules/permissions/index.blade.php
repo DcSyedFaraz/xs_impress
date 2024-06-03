@@ -51,13 +51,9 @@
                                                                 href="{{ route('permission.edit', $permission->id) }}">Edit</a>
                                                         @endcan
                                                         @can('permission-delete')
-                                                            {!! Form::open([
-                                                                'method' => 'DELETE',
-                                                                'route' => ['permission.destroy', $permission->id],
-                                                                'style' => 'display:inline',
-                                                            ]) !!}
-                                                            {!! Form::submit('Delete', ['class' => 'btn btn-danger']) !!}
-                                                            {!! Form::close() !!}
+                                                            <x-delete-form :route="route('permission.destroy', $permission->id)">
+                                                                Delete
+                                                            </x-delete-form>
                                                         @endcan
                                                     </td>
 

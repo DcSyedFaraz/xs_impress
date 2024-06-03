@@ -1,7 +1,7 @@
 <x-app-layout>
     <div class="content-wrapper">
         <!-- Content Header (Page header) -->
-       
+
 
         <section class="content">
             <div class="container-fluid">
@@ -21,7 +21,7 @@
                                         </div>
 
                                         <div class="col-xs-12 col-sm-12 col-md-12 text-center">
-                                            <button type="submit" class="btn btn-primary">Submit</button>
+                                            <button type="submit" class="btn btn-primary my-3">Submit</button>
                                         </div>
                                     </div>
                                 </form>
