@@ -24,4 +24,21 @@ class ProductDetail extends Model
         'web_shop_information',
         'important_information'
     ];
+
+    public function config()
+    {
+        return $this->hasMany(ProductConfiguration::class);
+    }
+    public function product()
+    {
+        return $this->belongsTo(Product::class);
+    }
+    public function images()
+    {
+        return $this->hasMany(ProductImage::class, 'product_detail_id');
+    }
+    public function scopeLanguage($query, $language)
+    {
+        return $query->where('language', $language);
+    }
 }

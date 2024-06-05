@@ -68,9 +68,9 @@ class ProductController extends Controller
     }
 
     public function editProduct($id){
-        $product = Product::find($id);
+        $product = Product::with('details.config')->findOrFail($id);
         $categories = Category::get();
-
+        // dd($product);
         return view('modules.product.edit', compact(['product', 'categories']));
     }
 

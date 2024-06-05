@@ -15,4 +15,9 @@ class ProductImage extends Model
         'description',
         'file_name',
     ];
+
+    public function productDetail()
+    {
+        return $this->belongsTo(ProductDetail::class);
+    }
 }

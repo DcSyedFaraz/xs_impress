@@ -29,7 +29,20 @@ class Product extends Model
         'unstructured_information',
     ];
 
-    public function deletedProducts(){
-        return $this->hasMany(DeletedProduct::class,'sku','sku');
+    public function deletedProducts()
+    {
+        return $this->hasMany(DeletedProduct::class, 'sku', 'sku');
+    }
+    public function static_content()
+    {
+        return $this->hasMany(ProductStaticContent::class, 'sku', 'sku');
+    }
+    public function details()
+    {
+        return $this->hasOne(ProductDetail::class);
+    }
+    public function scopeParent($query, $id)
+    {
+        return $query->where('parent_id', $id);
     }
 }
