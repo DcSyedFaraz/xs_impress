@@ -113,13 +113,13 @@
 
             @php
                 $variants = $productClass->getProductVariants($product->id);
-                // $variants = $product->details->images;
+                // $variants = $product->details->images()->paginate(20);
             @endphp
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg mt-5">
                 <div class="p-6 text-gray-900">
                     <h5>Variants</h5>
                     @if (!count($variants))
-                        <h6>
+                    <h6>
                             <div class="">There are no variants for this product</div>
                         </h6>
                     @endif
@@ -136,6 +136,7 @@
                             </thead>
                             <tbody aria-relevant="all" aria-live="polite">
                                 @foreach ($variants as $key => $variant)
+                                {{-- @dd($variant->sku,$product->sku) --}}
                                     <tr>
                                         @php
                                             $serial =

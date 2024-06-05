@@ -45,4 +45,18 @@ class Product extends Model
     {
         return $query->where('parent_id', $id);
     }
+    public function parent()
+    {
+        return $this->belongsTo(Product::class, 'parent_id');
+    }
+
+    public function images()
+    {
+        return $this->hasManyThrough(ProductImage::class, ProductDetail::class);
+    }
+
+    public function variants()
+    {
+        return $this->hasMany(Product::class, 'parent_id');
+    }
 }
