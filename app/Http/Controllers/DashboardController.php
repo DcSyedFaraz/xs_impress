@@ -25,16 +25,36 @@ use Illuminate\Support\Facades\Storage;
 
 class DashboardController extends Controller
 {
-    public function dashboard(){
+    public function dashboard()
+    {
         return view('dashboard');
     }
+    public function apiexport()
+    {
 
-    public function index(){
+        $parentProducts = Product::where('parent_id', 0)
+            ->with(['details', 'images'])
+            ->get();
+
+        $transformedProducts = $parentProducts->map(function ($product) {
+            return [
+                'SKU' => $product->sku,
+                'ProductName' => $product->details->name ?? '',
+                'Description' => $product->details->description ?? '',
+                'PictureURLs' => $product->images->pluck('url')->toArray(),
+            ];
+        });
+
+        return response()->json($transformedProducts, 200);
+    }
+
+    public function index()
+    {
         $myfile = fopen("https://promidatabase.s3.eu-central-1.amazonaws.com/Profiles/Live/9ccfda5a-8127-495a-a089-5df05b2c7a11/Import/Import.txt", "r") or die("Unable to open file!");
 
-        while(!feof($myfile)) {
+        while (!feof($myfile)) {
             $productFile = fgets($myfile);
-            if(str_contains($productFile, '.json')){
+            if (str_contains($productFile, '.json')) {
                 $splitUrl = explode('|', $productFile);
                 $productUrl = $splitUrl[0];
                 $productHash = trim($splitUrl[1]);
@@ -44,21 +64,21 @@ class DashboardController extends Controller
                 $sku = str_replace('.json', '', $skuWithJson);
                 $checkProduct = Product::where('sku', $sku)->first();
 
-                if($checkProduct){
-                    if($checkProduct->hash == $productHash){
+                if ($checkProduct) {
+                    if ($checkProduct->hash == $productHash) {
                         continue;
-                    }else{
+                    } else {
                         Product::where('id', $checkProduct->id)->delete();
                         Product::where('parent_id', $checkProduct->id)->delete();
 
                         Notification::create([
                             'type' => 'Product',
-                            'content' => 'Product '.$sku.' has been updated',
+                            'content' => 'Product ' . $sku . ' has been updated',
                             'model_id' => 0,
                             'read' => 0
                         ]);
 
-                        echo 'Product '.$sku.' removed for re-import / ';
+                        echo 'Product ' . $sku . ' removed for re-import / ';
                     }
                 }
 
@@ -68,7 +88,7 @@ class DashboardController extends Controller
                 $parentProduct = $this->createProduct($product, 0, $productHash);
 
                 // Loop Product Details Languages
-                foreach($product['ProductDetails'] as $language => $productDetails){
+                foreach ($product['ProductDetails'] as $language => $productDetails) {
                     // Store Product Details
                     $this->storeProductDetails($parentProduct->id, $language, $productDetails);
                 }
@@ -80,12 +100,12 @@ class DashboardController extends Controller
                 $this->storePrintData($parentProduct->id, $product);
 
                 // Loop Child Products
-                foreach($product['ChildProducts'] as $variant){
+                foreach ($product['ChildProducts'] as $variant) {
                     // Create Variant Product
                     $variantProduct = $this->createProduct($variant, $parentProduct->id, '');
 
                     // Loop Variant Details Languages
-                    foreach($variant['ProductDetails'] as $language => $variantDetails){
+                    foreach ($variant['ProductDetails'] as $language => $variantDetails) {
                         // Store Variant Details
                         $this->storeProductDetails($variantProduct->id, $language, $variantDetails);
                     }
@@ -97,15 +117,16 @@ class DashboardController extends Controller
                     $this->storePrintData($variantProduct->id, $variant);
                 }
 
-                echo $sku." has been imported / ";
+                echo $sku . " has been imported / ";
             }
         }
         fclose($myfile);
 
-//        $product = json_decode(file_get_contents(public_path().'/Configurable.json'), true);
+        //        $product = json_decode(file_get_contents(public_path().'/Configurable.json'), true);
     }
 
-    public function createProduct($product, $parentId = 0, $hash = '', $supplierId = 1){
+    public function createProduct($product, $parentId = 0, $hash = '', $supplierId = 1)
+    {
         $parentStartSequence = 10001000;
         $childStartSequence = 100;
 
@@ -125,16 +146,16 @@ class DashboardController extends Controller
 
         $sequence = 0;
 
-        if(!$parentId){
-            $sequence = $lastParentProductSequence? $lastParentProductSequence->value : $parentStartSequence;
-        }else{
-            $sequence = $lastChildProductSequence? $lastChildProductSequence->value : $childStartSequence;
+        if (!$parentId) {
+            $sequence = $lastParentProductSequence ? $lastParentProductSequence->value : $parentStartSequence;
+        } else {
+            $sequence = $lastChildProductSequence ? $lastChildProductSequence->value : $childStartSequence;
         }
 
         $parent = Product::create([
             'hash' => $hash,
-            'supplier_sequence' => $sequence+1,
-            'type' => $parentId? 'variant' : 'parent',
+            'supplier_sequence' => $sequence + 1,
+            'type' => $parentId ? 'variant' : 'parent',
             'parent_id' => $parentId,
             'sku' => $product['Sku'],
             'supplier_sku' => $product['SupplierSku'],
@@ -144,54 +165,55 @@ class DashboardController extends Controller
             'ean' => $product['Ean'],
             'video_url' => $product['VideoUrl'],
             'forbidden_regions' => $product['ForbiddenRegions'],
-            'imprint_references' => isset($product['ImprintReferences'])? json_encode($product['ImprintReferences']) : null,
+            'imprint_references' => isset($product['ImprintReferences']) ? json_encode($product['ImprintReferences']) : null,
             'product_costs' => json_encode($product['ProductCosts']),
             'sample_price_country_based' => json_encode($product['SamplePriceCountryBased']),
             'product_price_region_based' => json_encode($product['ProductPriceRegionBased']),
             'unstructured_information' => json_encode($product['UnstructuredInformation']),
         ]);
 
-         SupplierProduct::create([
+        SupplierProduct::create([
             'supplier_id' => $supplierId,
             'product_id' => $parent->id
-         ]);
+        ]);
 
 
-        $parentProductSequence = Product::where('id', $parentId? $parentId : $parent->id)->first();
+        $parentProductSequence = Product::where('id', $parentId ? $parentId : $parent->id)->first();
         $childProductSequence = Product::where([['parent_id', $parentId], ['type', 'variant']])->get()->last();
 
         $finalPSeq = $parentProductSequence->supplier_sequence;
-        $finalCSeq = $childProductSequence? $childProductSequence->supplier_sequence : $childStartSequence;
+        $finalCSeq = $childProductSequence ? $childProductSequence->supplier_sequence : $childStartSequence;
 
-        $customSku = 'XS'.$finalPSeq.'.'.$finalCSeq.'-'.$supplier->supplier_code;
+        $customSku = 'XS' . $finalPSeq . '.' . $finalCSeq . '-' . $supplier->supplier_code;
 
         $checkCustomSku = CustomProductSku::where('orignal_sku', $product['Sku'])->first();
 
-//        if(!$checkCustomSku){
-        try{
+        //        if(!$checkCustomSku){
+        try {
             CustomProductSku::create([
                 'orignal_sku' => $product['Sku'],
                 'custom_sku' => $customSku
             ]);
-        }catch (\Exception $exception){
+        } catch (\Exception $exception) {
 
         }
 
-//        }
+        //        }
 
         return $parent;
     }
 
-    public function storeProductDetails($id, $language, $product){
+    public function storeProductDetails($id, $language, $product)
+    {
         $_product = Product::find($id);
 
         $productStaticContent = ProductStaticContent::where([['sku', $_product->sku], ['language', $language]])->first();
 
-        if(!$productStaticContent){
+        if (!$productStaticContent) {
             ProductStaticContent::create([
                 'sku' => $_product->sku,
                 'language' => $language,
-                'category' => isset(json_decode($_product->non_language_depended_product_details, true)['Category'])? json_decode($_product->non_language_depended_product_details, true)['Category'] : '',
+                'category' => isset(json_decode($_product->non_language_depended_product_details, true)['Category']) ? json_decode($_product->non_language_depended_product_details, true)['Category'] : '',
                 'description' => $product['Description']
             ]);
         }
@@ -221,8 +243,8 @@ class DashboardController extends Controller
 
         $jsonImages = [];
 
-        if($product['MediaGalleryImages']){
-            foreach($product['MediaGalleryImages'] as $mediaGalleryImage){
+        if ($product['MediaGalleryImages']) {
+            foreach ($product['MediaGalleryImages'] as $mediaGalleryImage) {
                 ProductMediaGalleryImage::create([
                     'product_detail_id' => $productDetail->id,
                     'url' => $mediaGalleryImage['Url'],
@@ -234,8 +256,8 @@ class DashboardController extends Controller
             }
         }
 
-        if($product['ConfigurationFields']){
-            foreach($product['ConfigurationFields'] as $configurationField){
+        if ($product['ConfigurationFields']) {
+            foreach ($product['ConfigurationFields'] as $configurationField) {
                 ProductConfiguration::create([
                     'product_detail_id' => $productDetail->id,
                     'name' => $configurationField['ConfigurationName'],
@@ -247,7 +269,7 @@ class DashboardController extends Controller
 
         $customProductSkuData = CustomProductSku::where('orignal_sku', $_product->sku)->first();
 
-        if($language == 'de'){
+        if ($language == 'de') {
             $jsonFile = [
                 "SKU" => $customProductSkuData->custom_sku,
                 "ProductName" => $product['Name'],
@@ -255,20 +277,21 @@ class DashboardController extends Controller
                 "PictureURLs" => $jsonImages
             ];
 
-            $filePath = public_path().'storage/export/'.$customProductSkuData->custom_sku.'.json';
+            $filePath = public_path() . 'storage/export/' . $customProductSkuData->custom_sku . '.json';
 
-            if(file_exists($filePath)){
+            if (file_exists($filePath)) {
                 unlink($filePath);
             }
 
-            Storage::disk('public')->put('export/'.$customProductSkuData->custom_sku.'.json', json_encode($jsonFile));
+            Storage::disk('public')->put('export/' . $customProductSkuData->custom_sku . '.json', json_encode($jsonFile));
         }
     }
 
-    public function storeProductPrice($id, $product){
-        if($product['ProductPriceCountryBased']){
-            foreach($product['ProductPriceCountryBased'] as $countryCurrency => $priceCountryBased){
-                foreach($priceCountryBased['RecommendedSellingPrice'] as $recommendedSellingPrice){
+    public function storeProductPrice($id, $product)
+    {
+        if ($product['ProductPriceCountryBased']) {
+            foreach ($product['ProductPriceCountryBased'] as $countryCurrency => $priceCountryBased) {
+                foreach ($priceCountryBased['RecommendedSellingPrice'] as $recommendedSellingPrice) {
                     ProductPriceCountryBased::create([
                         'product_id' => $id,
                         'country_currency' => $countryCurrency,
@@ -284,7 +307,7 @@ class DashboardController extends Controller
                     ]);
                 }
 
-                foreach($priceCountryBased['GeneralBuyingPrice'] as $generalBuyingPrice){
+                foreach ($priceCountryBased['GeneralBuyingPrice'] as $generalBuyingPrice) {
                     ProductPriceCountryBased::create([
                         'product_id' => $id,
                         'country_currency' => $countryCurrency,
@@ -303,16 +326,17 @@ class DashboardController extends Controller
         }
     }
 
-    public function storePrintData($id, $product){
-        if(isset($product['ImprintPositions']) && $product['ImprintPositions']){
-            foreach($product['ImprintPositions'] as $imprintPosition){
+    public function storePrintData($id, $product)
+    {
+        if (isset($product['ImprintPositions']) && $product['ImprintPositions']) {
+            foreach ($product['ImprintPositions'] as $imprintPosition) {
                 $position = ProductImprintPosition::create([
                     'product_id' => $id,
                     'position_code' => $imprintPosition['PositionCode'],
                     'unstructured_information' => json_encode($imprintPosition['UnstructuredInformation'])
                 ]);
 
-                foreach($imprintPosition['ImprintLocationTexts'] as $language => $imprintLocationText){
+                foreach ($imprintPosition['ImprintLocationTexts'] as $language => $imprintLocationText) {
                     ProductImprintPositionLocationText::create([
                         'product_imprint_position_id' => $position->id,
                         'language' => $language,
@@ -322,7 +346,7 @@ class DashboardController extends Controller
                     ]);
                 }
 
-                foreach($imprintPosition['ImprintOptions'] as $imprintOption){
+                foreach ($imprintPosition['ImprintOptions'] as $imprintOption) {
                     $productImprintPositionOption = ProductImprintPositionOption::create([
                         'product_imprint_position_id' => $position->id,
                         'child_imprints' => json_encode($imprintOption['ChildImprints']),
@@ -344,9 +368,9 @@ class DashboardController extends Controller
                         'price_region_based' => json_encode($imprintOption['ProductPriceRegionBased'])
                     ]);
 
-                    foreach($imprintOption['ProductPriceCountryBased'] as $currency => $priceCountryBased){
-                        foreach($priceCountryBased['RecommendedSellingPrice'] as $recommendedSellingPrice){
-                            if($recommendedSellingPrice['Price'] == ''){
+                    foreach ($imprintOption['ProductPriceCountryBased'] as $currency => $priceCountryBased) {
+                        foreach ($priceCountryBased['RecommendedSellingPrice'] as $recommendedSellingPrice) {
+                            if ($recommendedSellingPrice['Price'] == '') {
                                 continue;
                             }
                             ProductImprintPositionOptionPriceCountryBased::create([
@@ -364,8 +388,8 @@ class DashboardController extends Controller
                             ]);
                         }
 
-                        foreach($priceCountryBased['GeneralBuyingPrice'] as $generalBuyingPrice){
-                            if($generalBuyingPrice['Price'] == ''){
+                        foreach ($priceCountryBased['GeneralBuyingPrice'] as $generalBuyingPrice) {
+                            if ($generalBuyingPrice['Price'] == '') {
                                 continue;
                             }
                             ProductImprintPositionOptionPriceCountryBased::create([
@@ -384,8 +408,8 @@ class DashboardController extends Controller
                         }
                     }
 
-                    if($imprintOption['ImprintCosts']){
-                        foreach($imprintOption['ImprintCosts'] as $imprintCost){
+                    if ($imprintOption['ImprintCosts']) {
+                        foreach ($imprintOption['ImprintCosts'] as $imprintCost) {
                             ProductImprintPositionOptionCost::create([
                                 'product_imprint_position_option_id' => $productImprintPositionOption->id,
                                 'sku' => $imprintCost['Sku'],
@@ -407,8 +431,9 @@ class DashboardController extends Controller
         }
     }
 
-    public function export(Request $request){
-        if(!$request->has('limit') || !$request->has('skip')){
+    public function export(Request $request)
+    {
+        if (!$request->has('limit') || !$request->has('skip')) {
             return 'Please set skip and limit';
         }
 
@@ -421,14 +446,14 @@ class DashboardController extends Controller
 
         $productCounter = 0;
 
-        foreach($parentProducts as $parentProduct){
+        foreach ($parentProducts as $parentProduct) {
             $productJson[$productCounter]['product'] = $this->getProductData($parentProduct);
 
             $childProducts = Product::where('parent_id', $parentProduct->id)
                 ->select('id', 'sku', 'supplier_sku', 'a_number', 'ean', 'video_url', 'non_language_depended_product_details')
                 ->get();
 
-            foreach($childProducts as $childProduct) {
+            foreach ($childProducts as $childProduct) {
                 $productJson[$productCounter]['variants'][] = $this->getProductData($childProduct);
             }
 
@@ -438,12 +463,13 @@ class DashboardController extends Controller
         return json_encode($productJson);
     }
 
-    public function getProductData($childProduct){
+    public function getProductData($childProduct)
+    {
         $productJson = [];
 
-        $customSku =  CustomProductSku::where('orignal_sku', $childProduct->sku)->first();
+        $customSku = CustomProductSku::where('orignal_sku', $childProduct->sku)->first();
 
-        $productJson['categories'] = isset(json_decode($childProduct->non_language_depended_product_details, true)['Category'])? json_decode($childProduct->non_language_depended_product_details, true)['Category'] : '';
+        $productJson['categories'] = isset(json_decode($childProduct->non_language_depended_product_details, true)['Category']) ? json_decode($childProduct->non_language_depended_product_details, true)['Category'] : '';
         $productJson['sku'] = $childProduct->sku;
         $productJson['supplier_sku'] = $childProduct->supplier_sku;
         $productJson['xs_sku'] = $customSku->custom_sku;
@@ -454,37 +480,37 @@ class DashboardController extends Controller
 
         $languages = ProductDetail::where('product_id', $childProduct->id)->groupBy('language')->select('language')->get();
 
-        foreach($languages as $language){
+        foreach ($languages as $language) {
             $languageDependentDetails = ProductDetail::where([['product_id', $childProduct->id], ['language', $language->language]])
                 ->select('id', 'name', 'description', 'short_description', 'meta_name', 'meta_description', 'meta_keywords', 'is_active', 'web_shop_information')
                 ->first();
 
-            $productJson['language_dependent_details'][$language->language]['name'] =  $languageDependentDetails->name;
-            $productJson['language_dependent_details'][$language->language]['short_description'] =  $languageDependentDetails->short_description;
-            $productJson['language_dependent_details'][$language->language]['meta_name'] =  $languageDependentDetails->meta_name;
-            $productJson['language_dependent_details'][$language->language]['meta_description'] =  $languageDependentDetails->meta_description;
-            $productJson['language_dependent_details'][$language->language]['meta_keywords'] =  $languageDependentDetails->meta_keywords;
-            $productJson['language_dependent_details'][$language->language]['is_active'] =  $languageDependentDetails->is_active;
-            $productJson['language_dependent_details'][$language->language]['web_shop_information'] =  json_decode($languageDependentDetails->web_shop_information, true);
+            $productJson['language_dependent_details'][$language->language]['name'] = $languageDependentDetails->name;
+            $productJson['language_dependent_details'][$language->language]['short_description'] = $languageDependentDetails->short_description;
+            $productJson['language_dependent_details'][$language->language]['meta_name'] = $languageDependentDetails->meta_name;
+            $productJson['language_dependent_details'][$language->language]['meta_description'] = $languageDependentDetails->meta_description;
+            $productJson['language_dependent_details'][$language->language]['meta_keywords'] = $languageDependentDetails->meta_keywords;
+            $productJson['language_dependent_details'][$language->language]['is_active'] = $languageDependentDetails->is_active;
+            $productJson['language_dependent_details'][$language->language]['web_shop_information'] = json_decode($languageDependentDetails->web_shop_information, true);
 
             $image = ProductImage::where('product_detail_id', $languageDependentDetails->id)->select('url', 'description')->first();
             $mediaGallery = ProductMediaGalleryImage::where('product_detail_id', $languageDependentDetails->id)->select('url', 'description')->get();
 
             $productJson['images'][] = ['url' => $image->url, 'description' => $image->description];
 
-            foreach($mediaGallery as $galleryImage){
+            foreach ($mediaGallery as $galleryImage) {
                 $productJson['images'][] = ['url' => $galleryImage->url, 'description' => $galleryImage->description];
             }
         }
 
         $countryCurrency = ProductPriceCountryBased::where('product_id', $childProduct->id)->groupBy('country_currency')->select('country_currency')->get();
 
-        foreach($countryCurrency as $currency){
+        foreach ($countryCurrency as $currency) {
             $productPrices = ProductPriceCountryBased::where([['product_id', $childProduct->id], ['country_currency', $currency->country_currency], ['type', 'Recommended Selling Price']])
                 ->select('id', 'price', 'quantity', 'on_request', 'valuta', 'quantity_increments', 'vat_percentage', 'minimum_order_quantity')
                 ->get();
 
-            foreach($productPrices as $productPrice){
+            foreach ($productPrices as $productPrice) {
                 $productJson['product_price'][$currency->country_currency][$productPrice->quantity]['quantity'] = $productPrice->quantity;
                 $productJson['product_price'][$currency->country_currency][$productPrice->quantity]['price'] = $productPrice->price;
                 $productJson['product_price'][$currency->country_currency][$productPrice->quantity]['on_request'] = $productPrice->on_request;
@@ -499,10 +525,10 @@ class DashboardController extends Controller
             ->select('id', 'unstructured_information', 'position_code')
             ->get();
 
-        foreach($printPositions as $printPosition){
+        foreach ($printPositions as $printPosition) {
             $locationTexts = ProductImprintPositionLocationText::where('product_imprint_position_id', $printPosition->id)->get();
 
-            foreach($locationTexts as $locationText){
+            foreach ($locationTexts as $locationText) {
                 $productJson['printing']['positions'][$printPosition->position_code][$locationText->language] = ['name' => $locationText->name, 'description' => $locationText->description, 'images' => json_decode($locationText->images, true)];
             }
 
@@ -510,23 +536,23 @@ class DashboardController extends Controller
                 ->select('id', 'imprint_texts', 'sku')
                 ->get();
 
-            foreach($printOptions as $printOption){
+            foreach ($printOptions as $printOption) {
                 $imprintOptionText = json_decode($printOption->imprint_texts, true);
 
-                if(is_array($imprintOptionText)){
-                    foreach($imprintOptionText as $language => $text){
+                if (is_array($imprintOptionText)) {
+                    foreach ($imprintOptionText as $language => $text) {
                         $productJson['printing']['positions'][$printPosition->position_code]['options'][$printOption->sku][$language]['name'] = $text['Name'];
                     }
                 }
 
                 $printPricesCountryCurrency = ProductImprintPositionOptionPriceCountryBased::where('product_imprint_position_option_id', $printOption->id)->select('country_currency')->groupBy('country_currency')->get();
 
-                foreach($printPricesCountryCurrency as $printPricesCurrency){
+                foreach ($printPricesCountryCurrency as $printPricesCurrency) {
                     $printOptionPrices = ProductImprintPositionOptionPriceCountryBased::where([['product_imprint_position_option_id', $printOption->id], ['country_currency', $printPricesCurrency->country_currency], ['type', 'Recommended Selling Price']])
                         ->select('price', 'quantity', 'on_request', 'valuta', 'quantity_increments', 'vat_percentage', 'minimum_order_quantity')
                         ->get();
 
-                    foreach($printOptionPrices as $printOptionPrice){
+                    foreach ($printOptionPrices as $printOptionPrice) {
                         $productJson['printing']['positions'][$printPosition->position_code]['options'][$printOption->sku]['price'][$printPricesCurrency->country_currency][$printOptionPrice->quantity]['quantity'] = $printOptionPrice->quantity;
                         $productJson['printing']['positions'][$printPosition->position_code]['options'][$printOption->sku]['price'][$printPricesCurrency->country_currency][$printOptionPrice->quantity]['price'] = $printOptionPrice->price;
                         $productJson['printing']['positions'][$printPosition->position_code]['options'][$printOption->sku]['price'][$printPricesCurrency->country_currency][$printOptionPrice->quantity]['on_request'] = $printOptionPrice->on_request;
@@ -541,12 +567,12 @@ class DashboardController extends Controller
                     ->select('price_country_based')
                     ->get();
 
-                foreach($printOptionCosts as $printOptionCost){
+                foreach ($printOptionCosts as $printOptionCost) {
                     $oneTimeCost = json_decode($printOptionCost->price_country_based, true);
 
-                    if(is_array($oneTimeCost)){
-                        foreach($oneTimeCost as $currency => $otCost){
-                            $productJson['printing']['positions'][$printPosition->position_code]['options'][$printOption->sku]['one_time_cost'][$currency]['cost'] = isset($otCost['RecommendedSellingPrice'][0]['Price'])? $otCost['RecommendedSellingPrice'][0]['Price'] : 0;
+                    if (is_array($oneTimeCost)) {
+                        foreach ($oneTimeCost as $currency => $otCost) {
+                            $productJson['printing']['positions'][$printPosition->position_code]['options'][$printOption->sku]['one_time_cost'][$currency]['cost'] = isset($otCost['RecommendedSellingPrice'][0]['Price']) ? $otCost['RecommendedSellingPrice'][0]['Price'] : 0;
                         }
                     }
                 }
@@ -555,22 +581,24 @@ class DashboardController extends Controller
 
         $configuration = ProductConfiguration::where('product_detail_id', $languageDependentDetails->id)->get();
 
-        foreach($configuration as $swatch){
+        foreach ($configuration as $swatch) {
             $productJson['configuration'][][$swatch->name] = $swatch->value;
         }
 
         return $productJson;
     }
 
-    public function notifications(){
+    public function notifications()
+    {
         return Notification::where('read', 0)->get();
     }
 
-    public function getNotifications(){
+    public function getNotifications()
+    {
         $notifications = $this->notifications();
 
         Notification::where('id', '>', 0)->update([
-           'read' => 1
+            'read' => 1
         ]);
 
         return view('notification', compact(['notifications']));
